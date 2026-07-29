@@ -39,6 +39,19 @@ router.post('/profesional/registrar', (req, res) => {
   res.json({ ok: true, id: info.lastInsertRowid });
 });
 
+// Vía de recuperación: si todavía no se cargó ningún consultante, permite
+// reiniciar la cuenta de profesional (ej. si se erró el email/contraseña en
+// el alta inicial). Una vez que hay datos reales, queda bloqueado para no
+// arriesgar información cargada.
+router.post('/profesional/reiniciar', (req, res) => {
+  const totalConsultantes = db.prepare('SELECT COUNT(*) n FROM consultantes').get().n;
+  if (totalConsultantes > 0) {
+    return res.status(403).json({ error: 'Ya hay consultantes cargados; no se puede reiniciar la cuenta por esta vía.' });
+  }
+  db.prepare('DELETE FROM profesionales').run();
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
 router.post('/profesional/login', (req, res) => {
   const { email, password } = req.body || {};
   const p = db.prepare('SELECT * FROM profesionales WHERE email = ?').get(normEmail(email));
