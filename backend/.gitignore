@@ -1,0 +1,5 @@
+node_modules/
+psico.sqlite
+psico.sqlite-journal
+psico.sqlite-wal
+psico.sqlite-shm

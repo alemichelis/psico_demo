@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Psique — Mi cuenta</title>
+<style>
+  :root{
+    --bg:#f4f6fb; --panel:#ffffff; --ink:#1f2937; --muted:#6b7280;
+    --primary:#4f6df5; --primary-d:#3a55d4; --green:#16a34a; --red:#dc2626;
+    --border:#e5e7eb; --soft:#f9fafb;
+    --shadow:0 1px 3px rgba(16,24,40,.08),0 1px 2px rgba(16,24,40,.04);
+  }
+  body.dark{
+    --bg:#0f1420; --panel:#161d2b; --ink:#e6e9f0; --muted:#8b96ab;
+    --primary:#7188ff; --primary-d:#93a4ff; --green:#22c55e; --red:#f87171;
+    --border:#28324a; --soft:#1c2537;
+    --shadow:0 1px 3px rgba(0,0,0,.5),0 1px 2px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);font-size:14px;line-height:1.45;transition:background .15s,color .15s}
+  header{background:var(--panel);border-bottom:1px solid var(--border);padding:14px 22px;
+    display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20}
+  header h1{font-size:16px;margin:0;font-weight:600;display:flex;gap:8px;align-items:center}
+  .logo{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--primary),#8b5cf6);
+    display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px}
+  .top-actions{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px}
+  #pacNombre{color:var(--ink);font-weight:600;margin-right:6px}
+  main{max-width:760px;margin:22px auto;padding:0 18px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:18px;margin-bottom:18px}
+  .card h2{margin:0 0 4px;font-size:15px}
+  .card p.sub{margin:0 0 14px;color:var(--muted);font-size:13px}
+  .row{display:flex;gap:18px;flex-wrap:wrap}
+  .col{flex:1;min-width:220px}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:500}
+  input,select{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;
+    font-size:14px;font-family:inherit;background:var(--soft);color:var(--ink)}
+  input:focus,select:focus{outline:none;border-color:var(--primary);background:var(--panel)}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  button.b{border:none;border-radius:8px;padding:9px 15px;font-size:13px;font-weight:600;cursor:pointer}
+  .b-primary{background:var(--primary);color:#fff}
+  .b-primary:hover{background:var(--primary-d)}
+  .b-ghost{background:var(--soft);color:var(--ink);border:1px solid var(--border)}
+  .b-red{background:var(--panel);color:var(--red);border:1px solid #f3c6c6;padding:5px 10px;font-size:12px}
+  .b-red:hover{background:#fef2f2}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--muted);font-weight:600;padding:9px 10px;border-bottom:1px solid var(--border);font-size:12px}
+  td{padding:9px 10px;border-bottom:1px solid var(--soft)}
+  tr.pasada td{opacity:.5}
+  .empty{text-align:center;color:var(--muted);padding:26px 10px;font-size:13px}
+  .hint{font-size:12px;color:var(--muted);margin-top:4px}
+  .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
+  .pill-link{background:#dbeafe;color:#1d4ed8;text-decoration:none}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(80px);
+    background:#111827;color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;font-weight:500;
+    opacity:0;transition:.28s;z-index:60;box-shadow:0 8px 20px rgba(0,0,0,.25)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .auth-card{max-width:360px;width:100%}
+  .auth-card h2{margin:0 0 2px;font-size:19px;text-align:center}
+  .auth-card p.sub{text-align:center}
+  .auth-card .btns{justify-content:center}
+</style>
+</head>
+<body>
+
+<!-- El login ahora está unificado en / (solapas Paciente/Profesional). Esta
+     pantalla solo se ve un instante mientras iniciar() decide y redirige. -->
+<div class="auth-wrap" id="authScreen">
+  <div class="card auth-card">
+    <h2><span class="logo">Ψ</span></h2>
+    <p class="sub">Redirigiendo al inicio de sesión…</p>
+  </div>
+</div>
+
+<!-- ============ APP DEL PACIENTE ============ -->
+<div id="appShell" style="display:none">
+  <header>
+    <h1><span class="logo">Ψ</span> Psique</h1>
+    <div class="top-actions">
+      <span id="pacNombre"></span>
+      <button class="b b-ghost" id="themeBtn" style="padding:5px 10px" onclick="toggleTheme()">🌙 Oscuro</button>
+      <button class="b b-ghost" style="padding:5px 10px" onclick="logout()">Salir</button>
+    </div>
+  </header>
+  <main>
+    <div class="card">
+      <h2>Mis sesiones</h2>
+      <p class="sub">Turnos programados. Si tu sesión tiene link de videollamada, aparece acá.</p>
+      <table>
+        <thead><tr><th>Fecha</th><th>Hora</th><th>Costo</th><th>Videollamada</th><th></th></tr></thead>
+        <tbody id="sesBody"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>Solicitar nueva sesión</h2>
+      <p class="sub">Elegí fecha y horario. Tu profesional confirmará el costo y el link de la reunión.</p>
+      <div class="row">
+        <div class="col"><label>Fecha</label><input id="nFecha" type="date"></div>
+        <div class="col"><label>Horario</label><input id="nHora" type="time"></div>
+      </div>
+      <div class="btns"><button class="b b-primary" onclick="solicitarTurno()">Solicitar turno</button></div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+async function api(method, url, body){
+  const opts = { method, headers:{} };
+  if(body!==undefined){ opts.headers['Content-Type']='application/json'; opts.body=JSON.stringify(body); }
+  const res = await fetch(url, opts);
+  let data=null;
+  try{ data = await res.json(); }catch(e){}
+  if(!res.ok){
+    const err = new Error((data&&data.error)||('Error '+res.status));
+    err.status=res.status; err.data=data;
+    throw err;
+  }
+  return data;
+}
+
+let sesion=null;
+
+function hoy(){ return new Date().toISOString().slice(0,10); }
+function money(n){ return n===null || n===undefined ? '—' : '$'+(Number(n)||0).toFixed(2); }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function toast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._to); t._to=setTimeout(()=>t.classList.remove('show'),2200);
+}
+
+const THEME_KEY='gestion_psicologos_theme';
+function applyTheme(t){
+  document.body.classList.toggle('dark', t==='dark');
+  const btn=document.getElementById('themeBtn');
+  if(btn) btn.textContent = t==='dark' ? '☀️ Claro' : '🌙 Oscuro';
+}
+function toggleTheme(){
+  const next = document.body.classList.contains('dark') ? 'light' : 'dark';
+  localStorage.setItem(THEME_KEY, next);
+  applyTheme(next);
+}
+(function initTheme(){
+  const saved = localStorage.getItem(THEME_KEY);
+  const theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  applyTheme(theme);
+})();
+
+async function iniciar(){
+  try{
+    const estado = await api('GET','/api/auth/estado');
+    if(estado.sesion && estado.sesion.tipo==='paciente'){
+      sesion = estado.sesion;
+      await mostrarApp();
+    } else {
+      mostrarAuth();
+    }
+  }catch(e){ mostrarAuth(); }
+}
+function mostrarAuth(){
+  window.location.href='/';
+}
+async function mostrarApp(){
+  document.getElementById('authScreen').style.display='none';
+  document.getElementById('appShell').style.display='block';
+  document.getElementById('pacNombre').textContent=sesion.nombre;
+  document.getElementById('nFecha').value=hoy();
+  await renderSesiones();
+}
+async function logout(){
+  try{ await api('POST','/api/auth/logout'); }catch(e){}
+  sesion=null;
+  mostrarAuth();
+}
+
+async function renderSesiones(){
+  const lista = await api('GET','/api/agenda/mias');
+  lista.sort((a,b)=> (a.fecha||'').localeCompare(b.fecha||'') || (a.horario||'').localeCompare(b.horario||''));
+  const body=document.getElementById('sesBody'); body.innerHTML='';
+  const f=hoy();
+  lista.forEach(s=>{
+    const pasada = s.fecha < f;
+    const link = s.link_reunion
+      ? `<a class="pill pill-link" href="${esc(s.link_reunion)}" target="_blank" rel="noopener">🔗 Unirse</a>`
+      : '<span class="hint">Aún sin link</span>';
+    const accion = pasada ? '' : `<button class="b b-red" onclick="cancelarTurno(${s.id})">Cancelar</button>`;
+    body.insertAdjacentHTML('beforeend',
+      `<tr class="${pasada?'pasada':''}"><td>${s.fecha}</td><td>${s.horario||'—'}</td><td>${money(s.costo)}</td><td>${link}</td><td>${accion}</td></tr>`);
+  });
+  if(!lista.length) body.innerHTML='<tr><td colspan="5" class="empty">Todavía no tenés sesiones programadas.</td></tr>';
+}
+async function solicitarTurno(){
+  const fecha=document.getElementById('nFecha').value;
+  const horario=document.getElementById('nHora').value;
+  if(!fecha){ toast('Elegí una fecha'); return; }
+  try{
+    await api('POST','/api/agenda/mias', {fecha, horario});
+    toast('Turno solicitado. Tu profesional confirmará costo y link.');
+    document.getElementById('nHora').value='';
+    await renderSesiones();
+  }catch(e){ toast(e.message); }
+}
+async function cancelarTurno(id){
+  if(!confirm('¿Cancelar esta sesión?')) return;
+  await api('DELETE','/api/agenda/mias/'+id);
+  toast('Sesión cancelada');
+  await renderSesiones();
+}
+
+iniciar();
+</script>
+</body>
+</html>
