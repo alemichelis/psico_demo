@@ -129,16 +129,32 @@
         <label>Email</label><input id="liEmail" type="email" placeholder="tu@email.com">
         <label>Contraseña</label><input id="liPass" type="password">
         <div class="btns"><button class="b b-primary" onclick="loginProfesional()">Ingresar</button></div>
-        <p class="hint" style="text-align:center;margin-top:16px">¿No tenés cuenta? <button class="link-btn" onclick="mostrarSetupProfesional()">Creá una acá</button></p>
+        <p class="hint" style="text-align:center;margin-top:16px"><button class="link-btn" onclick="mostrarOlvidoPassword()">¿Olvidaste tu contraseña?</button></p>
+        <p class="hint" style="text-align:center;margin-top:6px">¿No tenés cuenta? <button class="link-btn" onclick="mostrarSetupProfesional()">Creá una acá</button></p>
       </div>
 
       <div id="authSetup" style="display:none">
-        <p class="sub">Primera vez que se usa esta instalación: creá tu cuenta de profesional.</p>
+        <p class="sub">Creá tu cuenta de profesional</p>
         <label>Nombre</label><input id="suNombre" placeholder="Tu nombre">
         <label>Email</label><input id="suEmail" type="email" placeholder="tu@email.com">
-        <label>Contraseña (mín. 6 caracteres)</label><input id="suPass" type="password">
+        <label>Contraseña</label><input id="suPass" type="password">
+        <p class="hint">Mínimo 8 caracteres, con una mayúscula y dos números.</p>
         <div class="btns"><button class="b b-primary" onclick="registrarProfesional()">Crear cuenta</button></div>
         <p class="hint" style="text-align:center;margin-top:16px">¿Ya tenés cuenta? <button class="link-btn" onclick="mostrarLoginProfesional()">Iniciá sesión</button></p>
+      </div>
+
+      <div id="authOlvide" style="display:none">
+        <p class="sub">Te mandamos un link de recuperación al email con el que te registraste.</p>
+        <label>Email</label><input id="olEmail" type="email" placeholder="tu@email.com">
+        <div class="btns"><button class="b b-primary" onclick="solicitarRecuperacion()">Enviar link de recuperación</button></div>
+        <p class="hint" style="text-align:center;margin-top:16px"><button class="link-btn" onclick="mostrarLoginProfesional()">Volver a iniciar sesión</button></p>
+      </div>
+
+      <div id="authReset" style="display:none">
+        <p class="sub">Elegí tu nueva contraseña</p>
+        <label>Nueva contraseña</label><input id="rsPass" type="password">
+        <p class="hint">Mínimo 8 caracteres, con una mayúscula y dos números.</p>
+        <div class="btns"><button class="b b-primary" onclick="confirmarNuevaPassword()">Guardar nueva contraseña</button></div>
       </div>
     </div>
   </div>
@@ -400,18 +416,27 @@ function toggleTheme(){
 // ============================================================
 //  AUTENTICACIÓN (login unificado: paciente / profesional)
 // ============================================================
+let resetTokenActual = null;
 async function iniciar(){
+  const params = new URLSearchParams(window.location.search);
+  const resetToken = params.get('reset');
+  if(resetToken){
+    resetTokenActual = resetToken;
+    history.replaceState(null, '', window.location.pathname);
+    mostrarAuth('profesional');
+    mostrarResetPassword();
+    return;
+  }
   try{
     const estado = await api('GET','/api/auth/estado');
     if(estado.sesion && estado.sesion.tipo==='paciente'){ window.location.href='/paciente'; return; }
-    if(estado.setupRequerido){ mostrarAuth('profesional','setup'); return; }
     if(estado.sesion && estado.sesion.tipo==='profesional'){
       sesion = estado.sesion;
       await mostrarApp();
       return;
     }
-    mostrarAuth('paciente','login');
-  }catch(e){ mostrarAuth('paciente','login'); }
+    mostrarAuth('paciente');
+  }catch(e){ mostrarAuth('paciente'); }
 }
 function mostrarTabAuth(tab){
   document.getElementById('tabPaciente').style.display = tab==='paciente' ? 'block' : 'none';
@@ -419,22 +444,21 @@ function mostrarTabAuth(tab){
   document.getElementById('tabPacienteBtn').classList.toggle('active', tab==='paciente');
   document.getElementById('tabProfesionalBtn').classList.toggle('active', tab==='profesional');
 }
-// Dentro de la solapa Profesional, el login es la vista por defecto (ya
-// existe una cuenta en casi todos los casos); "Crear cuenta" solo aparece
-// automáticamente la primerísima vez (setupRequerido) y siempre queda a un
-// link de distancia en ambos sentidos.
-function mostrarLoginProfesional(){
-  document.getElementById('authLogin').style.display='block';
-  document.getElementById('authSetup').style.display='none';
+// Dentro de la solapa Profesional el login es la vista por defecto; crear
+// cuenta, recuperar contraseña y elegir nueva contraseña quedan siempre a un
+// link de distancia, en cualquier sentido.
+function mostrarSubvistaProfesional(v){
+  ['authLogin','authSetup','authOlvide','authReset'].forEach(id=>{
+    document.getElementById(id).style.display = (id===v) ? 'block' : 'none';
+  });
 }
-function mostrarSetupProfesional(){
-  document.getElementById('authLogin').style.display='none';
-  document.getElementById('authSetup').style.display='block';
-}
-function mostrarAuth(tabInicial, modoProfesional){
+function mostrarLoginProfesional(){ mostrarSubvistaProfesional('authLogin'); }
+function mostrarSetupProfesional(){ mostrarSubvistaProfesional('authSetup'); }
+function mostrarOlvidoPassword(){ mostrarSubvistaProfesional('authOlvide'); }
+function mostrarResetPassword(){ mostrarSubvistaProfesional('authReset'); }
+function mostrarAuth(tabInicial){
   document.getElementById('authScreen').style.display='flex';
   document.getElementById('appShell').style.display='none';
-  if(modoProfesional==='setup') mostrarSetupProfesional(); else mostrarLoginProfesional();
   mostrarTabAuth(tabInicial || 'paciente');
 }
 async function loginPacienteUnificado(){
@@ -457,16 +481,39 @@ async function mostrarApp(){
   renderConsultantes();
   await renderDashboard();
 }
+const PASSWORD_RE = /^(?=.*[A-Z])(?=(?:.*\d){2,}).{8,}$/;
+const PASSWORD_MSG = 'La contraseña debe tener al menos 8 caracteres, una mayúscula y dos números.';
+
 async function registrarProfesional(){
   const nombre=document.getElementById('suNombre').value.trim();
   const email=document.getElementById('suEmail').value.trim();
   const password=document.getElementById('suPass').value;
-  if(!nombre || !email || password.length<6){ toast('Completá nombre, email y una contraseña de 6+ caracteres'); return; }
+  if(!nombre || !email){ toast('Completá nombre y email'); return; }
+  if(!PASSWORD_RE.test(password)){ toast(PASSWORD_MSG); return; }
   try{
     await api('POST','/api/auth/profesional/registrar',{nombre,email,password});
     sesion = (await api('GET','/api/auth/estado')).sesion;
     await mostrarApp();
     toast('Cuenta creada');
+  }catch(e){ toast(e.message); }
+}
+async function solicitarRecuperacion(){
+  const email=document.getElementById('olEmail').value.trim();
+  if(!email){ toast('Ingresá tu email'); return; }
+  try{
+    await api('POST','/api/auth/profesional/olvide-password', {email});
+    toast('Si el email existe, te enviamos un link de recuperación');
+    mostrarLoginProfesional();
+  }catch(e){ toast(e.message); }
+}
+async function confirmarNuevaPassword(){
+  const password=document.getElementById('rsPass').value;
+  if(!PASSWORD_RE.test(password)){ toast(PASSWORD_MSG); return; }
+  try{
+    await api('POST','/api/auth/profesional/resetear-password', {token:resetTokenActual, password});
+    toast('Contraseña actualizada. Iniciá sesión.');
+    document.getElementById('rsPass').value='';
+    mostrarLoginProfesional();
   }catch(e){ toast(e.message); }
 }
 async function loginProfesional(){
@@ -483,7 +530,8 @@ async function logout(){
   try{ await api('POST','/api/auth/logout'); }catch(e){}
   sesion=null; consultantes=[]; agendaCache=[];
   document.getElementById('liEmail').value=''; document.getElementById('liPass').value='';
-  mostrarAuth('profesional','login');
+  mostrarLoginProfesional();
+  mostrarAuth('profesional');
 }
 
 function toast(msg){

@@ -3,3 +3,4 @@ psico.sqlite
 psico.sqlite-journal
 psico.sqlite-wal
 psico.sqlite-shm
+server.log

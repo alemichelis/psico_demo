@@ -47,4 +47,14 @@ db.exec(`
   );
 `);
 
+// Migración: agrega columnas para recuperación de contraseña si la base ya
+// existía de antes (CREATE TABLE IF NOT EXISTS no altera tablas existentes).
+const columnasProfesionales = db.prepare("PRAGMA table_info(profesionales)").all().map(c => c.name);
+if (!columnasProfesionales.includes('reset_token')) {
+  db.exec('ALTER TABLE profesionales ADD COLUMN reset_token TEXT');
+}
+if (!columnasProfesionales.includes('reset_token_expira')) {
+  db.exec('ALTER TABLE profesionales ADD COLUMN reset_token_expira TEXT');
+}
+
 module.exports = db;
