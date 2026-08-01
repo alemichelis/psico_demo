@@ -11,26 +11,53 @@ router.get('/', requireProfesional, (req, res) => {
   res.json(rangos);
 });
 
-router.post('/', requireProfesional, (req, res) => {
-  const { dia_semana, hora_inicio, hora_fin } = req.body || {};
+// Endpoint único para editar disponibilidad: activa o desactiva un tramo
+// horario de un día, fusionando franjas contiguas al activar y partiendo
+// franjas existentes al desactivar, para que nunca queden rangos superpuestos
+// o innecesariamente fragmentados. Devuelve la disponibilidad completa ya
+// actualizada, así el cliente repinta sin pedir un GET aparte.
+router.post('/toggle', requireProfesional, (req, res) => {
+  const { dia_semana, hora_inicio, hora_fin, activar } = req.body || {};
   const dia = Number(dia_semana);
   if (!Number.isInteger(dia) || dia < 0 || dia > 6) return res.status(400).json({ error: 'Día inválido' });
-  if (!HORA_RE.test(hora_inicio) || !HORA_RE.test(hora_fin)) {
-    return res.status(400).json({ error: 'El horario debe estar en punto o y media (ej: 09:00, 09:30)' });
+  if (!HORA_RE.test(hora_inicio) || !HORA_RE.test(hora_fin) || hora_inicio >= hora_fin) {
+    return res.status(400).json({ error: 'Rango horario inválido' });
   }
-  if (hora_inicio < HORA_MIN || hora_fin > HORA_MAX || hora_inicio >= hora_fin) {
-    return res.status(400).json({ error: `El horario debe estar entre ${HORA_MIN} y ${HORA_MAX}, y el fin debe ser posterior al inicio` });
+  if (hora_inicio < HORA_MIN || hora_fin > HORA_MAX) {
+    return res.status(400).json({ error: `El horario debe estar entre ${HORA_MIN} y ${HORA_MAX}` });
   }
-  const info = db.prepare('INSERT INTO disponibilidad (profesional_id, dia_semana, hora_inicio, hora_fin) VALUES (?, ?, ?, ?)')
-    .run(req.session.profesionalId, dia, hora_inicio, hora_fin);
-  res.json(db.prepare('SELECT * FROM disponibilidad WHERE id = ?').get(info.lastInsertRowid));
-});
 
-router.delete('/:id', requireProfesional, (req, res) => {
-  const row = db.prepare('SELECT id FROM disponibilidad WHERE id = ? AND profesional_id = ?').get(req.params.id, req.session.profesionalId);
-  if (!row) return res.status(404).json({ error: 'No encontrado' });
-  db.prepare('DELETE FROM disponibilidad WHERE id = ?').run(req.params.id);
-  res.json({ ok: true });
+  const profesionalId = req.session.profesionalId;
+  const existentes = db.prepare('SELECT * FROM disponibilidad WHERE profesional_id = ? AND dia_semana = ? ORDER BY hora_inicio')
+    .all(profesionalId, dia);
+  const borrar = db.prepare('DELETE FROM disponibilidad WHERE id = ?');
+  const crear = db.prepare('INSERT INTO disponibilidad (profesional_id, dia_semana, hora_inicio, hora_fin) VALUES (?, ?, ?, ?)');
+
+  const aplicar = db.transaction(() => {
+    if (activar) {
+      let nuevoInicio = hora_inicio, nuevoFin = hora_fin;
+      for (const r of existentes) {
+        const tocaOSolapa = r.hora_inicio <= nuevoFin && r.hora_fin >= nuevoInicio;
+        if (tocaOSolapa) {
+          if (r.hora_inicio < nuevoInicio) nuevoInicio = r.hora_inicio;
+          if (r.hora_fin > nuevoFin) nuevoFin = r.hora_fin;
+          borrar.run(r.id);
+        }
+      }
+      crear.run(profesionalId, dia, nuevoInicio, nuevoFin);
+    } else {
+      for (const r of existentes) {
+        const sinSolape = r.hora_inicio >= hora_fin || r.hora_fin <= hora_inicio;
+        if (sinSolape) continue;
+        borrar.run(r.id);
+        if (r.hora_inicio < hora_inicio) crear.run(profesionalId, dia, r.hora_inicio, hora_inicio);
+        if (r.hora_fin > hora_fin) crear.run(profesionalId, dia, hora_fin, r.hora_fin);
+      }
+    }
+  });
+  aplicar();
+
+  res.json(db.prepare('SELECT * FROM disponibilidad WHERE profesional_id = ? ORDER BY dia_semana, hora_inicio').all(profesionalId));
 });
 
 router.get('/horarios', requirePaciente, (req, res) => {

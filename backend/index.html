@@ -102,6 +102,17 @@
   .pw-toggle{position:absolute;top:0;right:2px;bottom:0;background:none;border:none;cursor:pointer;
     font-size:15px;line-height:1;padding:0 8px;color:var(--muted);width:auto}
   .pw-toggle:hover{color:var(--ink)}
+  .dispo-scroll{overflow-x:auto}
+  .dispo-grid{display:grid;grid-template-columns:56px repeat(7,1fr);gap:2px;min-width:620px;user-select:none;touch-action:none}
+  .dispo-grid .dg-head{font-size:11px;font-weight:600;color:var(--muted);text-align:center;padding:6px 2px}
+  .dispo-grid .dg-time{font-size:10px;color:var(--muted);text-align:right;padding-right:6px;line-height:18px}
+  .dispo-grid .dg-cell{height:18px;background:var(--soft);border-radius:3px;cursor:pointer}
+  .dispo-grid .dg-cell.hora{border-top:1px solid var(--border)}
+  .dispo-grid .dg-cell:hover{background:var(--border)}
+  .dispo-grid .dg-cell.on{background:var(--primary)}
+  .dispo-grid .dg-cell.on:hover{background:var(--primary-d)}
+  .dispo-grid .dg-cell.preview-on{outline:2px solid var(--green);outline-offset:-2px}
+  .dispo-grid .dg-cell.preview-off{outline:2px solid var(--red);outline-offset:-2px}
   .auth-tabs{display:flex;gap:4px;background:var(--soft);border:1px solid var(--border);border-radius:9px;padding:4px;margin:16px 0 4px}
   .auth-tabs button{flex:1;background:none;border:none;padding:8px;border-radius:6px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
   .auth-tabs button.active{background:var(--panel);color:var(--primary);box-shadow:var(--shadow)}
@@ -298,27 +309,10 @@
 
   <!-- ============ DISPONIBILIDAD ============ -->
   <section id="disponibilidad" class="view">
-    <div class="row">
-      <div class="col" style="max-width:360px">
-        <div class="card">
-          <h2>Agregar disponibilidad</h2>
-          <p class="sub">Franjas semanales recurrentes en las que ofrecés turnos. Grilla de 30 minutos, entre 07:00 y 23:00.</p>
-          <label>Día</label><select id="dpDia"></select>
-          <label>Desde</label><select id="dpDesde"></select>
-          <label>Hasta</label><select id="dpHasta"></select>
-          <div class="btns"><button class="b b-primary" onclick="agregarDisponibilidad()">Agregar franja</button></div>
-        </div>
-      </div>
-      <div class="col">
-        <div class="card">
-          <h2>Tu disponibilidad semanal</h2>
-          <p class="sub">Los pacientes solo pueden reservar dentro de estas franjas (y que no estén ya ocupadas).</p>
-          <table>
-            <thead><tr><th>Día</th><th>Desde</th><th>Hasta</th><th></th></tr></thead>
-            <tbody id="dispoBody"></tbody>
-          </table>
-        </div>
-      </div>
+    <div class="card">
+      <h2>Tu disponibilidad semanal</h2>
+      <p class="sub">Hacé clic o arrastrá para marcar los horarios en los que estás disponible (clic de nuevo para sacarlos). Los pacientes solo pueden reservar ahí dentro, y que no estén ya ocupados. Grilla de 30 minutos, de 07:00 a 23:00.</p>
+      <div class="dispo-scroll"><div class="dispo-grid" id="dispoGrid"></div></div>
     </div>
   </section>
 
@@ -512,7 +506,7 @@ async function mostrarApp(){
   document.getElementById('dashFecha').value=hoy();
   document.getElementById('aFechaIni').value=hoy();
   document.getElementById('aFechaFin').value=hoy();
-  poblarSelectsDisponibilidad();
+  initGridDisponibilidad();
   await cargarConsultantes();
   renderConsultantes();
   await renderDashboard();
@@ -825,54 +819,79 @@ function limpiarCita(){
 }
 
 // ============================================================
-//  DISPONIBILIDAD
+//  DISPONIBILIDAD (grilla semanal interactiva: clic o arrastre)
 // ============================================================
-const DIAS_SEMANA=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+const DIAS_CORTOS=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 let disponibilidadCache=[];
-function gridHorarios(){
-  const out=[];
-  for(let m=7*60; m<=23*60; m+=30){
-    out.push(String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'));
-  }
-  return out;
+let arrastreDispo=null; // {dia, minInicio, minFin, activar}
+
+function minutosGridDispo(){ const out=[]; for(let m=7*60; m<23*60; m+=30) out.push(m); return out; }
+function minAHora(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
+function slotDisponible(dia,min){
+  const h=minAHora(min);
+  return disponibilidadCache.some(r=>r.dia_semana===dia && r.hora_inicio<=h && r.hora_fin>h);
 }
-function poblarSelectsDisponibilidad(){
-  document.getElementById('dpDia').innerHTML = DIAS_SEMANA.map((d,i)=>`<option value="${i}">${d}</option>`).join('');
-  const horas=gridHorarios();
-  document.getElementById('dpDesde').innerHTML = horas.slice(0,-1).map(h=>`<option value="${h}">${h}</option>`).join('');
-  document.getElementById('dpHasta').innerHTML = horas.slice(1).map(h=>`<option value="${h}">${h}</option>`).join('');
-  document.getElementById('dpHasta').value = horas[horas.length-1];
-}
-function pintarDisponibilidad(){
-  const body=document.getElementById('dispoBody'); body.innerHTML='';
-  const lista=disponibilidadCache.slice().sort((a,b)=> a.dia_semana-b.dia_semana || a.hora_inicio.localeCompare(b.hora_inicio));
-  lista.forEach(d=>{
-    body.insertAdjacentHTML('beforeend',
-      `<tr><td>${DIAS_SEMANA[d.dia_semana]}</td><td>${d.hora_inicio}</td><td>${d.hora_fin}</td>
-       <td><button class="b b-red" style="padding:4px 10px" onclick="eliminarDisponibilidad(${d.id})">Eliminar</button></td></tr>`);
+function pintarGridDisponibilidad(){
+  const cont=document.getElementById('dispoGrid');
+  const minutos=minutosGridDispo();
+  let html='<div class="dg-head"></div>'+DIAS_CORTOS.map(d=>`<div class="dg-head">${d}</div>`).join('');
+  minutos.forEach(m=>{
+    const enPunto = m%60===0;
+    html+=`<div class="dg-time">${enPunto?minAHora(m):''}</div>`;
+    for(let dia=0; dia<7; dia++){
+      const on=slotDisponible(dia,m);
+      html+=`<div class="dg-cell${on?' on':''}${enPunto?' hora':''}" data-dia="${dia}" data-min="${m}"></div>`;
+    }
   });
-  if(!lista.length) body.innerHTML='<tr><td colspan="4" class="empty">Todavía no cargaste disponibilidad.</td></tr>';
+  cont.innerHTML=html;
+  pintarPreviewDispo();
+}
+function pintarPreviewDispo(){
+  document.querySelectorAll('#dispoGrid .dg-cell').forEach(c=>c.classList.remove('preview-on','preview-off'));
+  if(!arrastreDispo) return;
+  const desde=Math.min(arrastreDispo.minInicio,arrastreDispo.minFin);
+  const hasta=Math.max(arrastreDispo.minInicio,arrastreDispo.minFin);
+  const clase=arrastreDispo.activar?'preview-on':'preview-off';
+  document.querySelectorAll(`#dispoGrid .dg-cell[data-dia="${arrastreDispo.dia}"]`).forEach(c=>{
+    const m=Number(c.dataset.min);
+    if(m>=desde && m<=hasta) c.classList.add(clase);
+  });
 }
 async function renderDisponibilidad(){
   disponibilidadCache = await api('GET','/api/disponibilidad');
-  pintarDisponibilidad();
+  pintarGridDisponibilidad();
 }
-async function agregarDisponibilidad(){
-  const dia_semana=Number(document.getElementById('dpDia').value);
-  const hora_inicio=document.getElementById('dpDesde').value;
-  const hora_fin=document.getElementById('dpHasta').value;
-  if(hora_inicio>=hora_fin){ toast('El horario de fin debe ser posterior al de inicio'); return; }
+// Delegación sobre el contenedor (no por celda): sobrevive a los repintados,
+// que regeneran las celdas en cada cambio. elementFromPoint funciona igual
+// con mouse y con touch, evitando el capture implícito de pointerenter.
+function initGridDisponibilidad(){
+  const cont=document.getElementById('dispoGrid');
+  cont.onpointerdown = e=>{
+    const celda=e.target.closest('.dg-cell'); if(!celda) return;
+    e.preventDefault();
+    arrastreDispo = { dia:Number(celda.dataset.dia), minInicio:Number(celda.dataset.min), minFin:Number(celda.dataset.min), activar: !celda.classList.contains('on') };
+    pintarPreviewDispo();
+  };
+  cont.onpointermove = e=>{
+    if(!arrastreDispo) return;
+    const el=document.elementFromPoint(e.clientX,e.clientY);
+    const celda = el && el.closest('.dg-cell');
+    if(!celda || Number(celda.dataset.dia)!==arrastreDispo.dia) return;
+    arrastreDispo.minFin = Number(celda.dataset.min);
+    pintarPreviewDispo();
+  };
+}
+document.addEventListener('pointerup', async ()=>{
+  if(!arrastreDispo) return;
+  const {dia,activar}=arrastreDispo;
+  const desde=Math.min(arrastreDispo.minInicio,arrastreDispo.minFin);
+  const hasta=Math.max(arrastreDispo.minInicio,arrastreDispo.minFin)+30;
+  arrastreDispo=null;
   try{
-    await api('POST','/api/disponibilidad', {dia_semana, hora_inicio, hora_fin});
-    toast('Disponibilidad agregada');
-    await renderDisponibilidad();
+    disponibilidadCache = await api('POST','/api/disponibilidad/toggle', {dia_semana:dia, hora_inicio:minAHora(desde), hora_fin:minAHora(hasta), activar});
   }catch(e){ toast(e.message); }
-}
-async function eliminarDisponibilidad(id){
-  if(!confirm('¿Eliminar esta franja de disponibilidad?')) return;
-  await api('DELETE','/api/disponibilidad/'+id);
-  await renderDisponibilidad();
-}
+  pintarGridDisponibilidad();
+});
 
 // ============================================================
 //  SESIONES / ANOTACIONES
