@@ -106,11 +106,13 @@
   .dispo-grid{display:grid;grid-template-columns:56px repeat(7,1fr);gap:2px;min-width:620px;user-select:none;touch-action:none}
   .dispo-grid .dg-head{font-size:11px;font-weight:600;color:var(--muted);text-align:center;padding:6px 2px}
   .dispo-grid .dg-time{font-size:10px;color:var(--muted);text-align:right;padding-right:6px;line-height:18px}
-  .dispo-grid .dg-cell{height:18px;background:var(--soft);border-radius:3px;cursor:pointer}
+  .dispo-grid .dg-cell{height:18px;background:var(--soft);border-radius:3px;cursor:pointer;position:relative}
   .dispo-grid .dg-cell.hora{border-top:1px solid var(--border)}
   .dispo-grid .dg-cell:hover{background:var(--border)}
   .dispo-grid .dg-cell.on{background:var(--primary)}
   .dispo-grid .dg-cell.on:hover{background:var(--primary-d)}
+  .dispo-grid .dg-cell.ocupada::after{content:'';position:absolute;right:2px;bottom:2px;width:6px;height:6px;
+    border-radius:50%;background:var(--amber);box-shadow:0 0 0 1px rgba(0,0,0,.15)}
   .dispo-grid .dg-cell.preview-on{outline:2px solid var(--green);outline-offset:-2px}
   .dispo-grid .dg-cell.preview-off{outline:2px solid var(--red);outline-offset:-2px}
   .auth-tabs{display:flex;gap:4px;background:var(--soft);border:1px solid var(--border);border-radius:9px;padding:4px;margin:16px 0 4px}
@@ -298,6 +300,9 @@
           <p class="sub">Clasificadas por consultante. Hacé clic en una fila para editar el turno.</p>
           <label>Ver citas de</label>
           <select id="agFiltroCons" onchange="renderAgenda()"></select>
+          <div class="btns">
+            <button class="b b-red" id="agBorrarSerieBtn" style="display:none" onclick="eliminarSerieConsultante()">Eliminar todas las citas de este consultante</button>
+          </div>
           <table style="margin-top:12px">
             <thead><tr><th>Fecha</th><th>Hora</th><th>Costo</th><th>Link</th></tr></thead>
             <tbody id="agBody"></tbody>
@@ -311,7 +316,7 @@
   <section id="disponibilidad" class="view">
     <div class="card">
       <h2>Tu disponibilidad semanal</h2>
-      <p class="sub">Hacé clic o arrastrá para marcar los horarios en los que estás disponible (clic de nuevo para sacarlos). Los pacientes solo pueden reservar ahí dentro, y que no estén ya ocupados. Grilla de 30 minutos, de 07:00 a 23:00.</p>
+      <p class="sub">Hacé clic o arrastrá para marcar los horarios en los que estás disponible (clic de nuevo para sacarlos). Los pacientes solo pueden reservar ahí dentro, y que no estén ya ocupados. Grilla de 30 minutos, de 07:00 a 23:00. El punto ámbar señala horarios con sesiones ya agendadas (próximas fechas); pasá el mouse para ver el detalle.</p>
       <div class="dispo-scroll"><div class="dispo-grid" id="dispoGrid"></div></div>
     </div>
   </section>
@@ -758,7 +763,19 @@ function pintarAgenda(){
 async function renderAgenda(){
   const filtro=document.getElementById('agFiltroCons').value;
   agendaCache = await api('GET','/api/agenda'+(filtro?('?consultante_id='+filtro):''));
+  document.getElementById('agBorrarSerieBtn').style.display = filtro ? 'inline-block' : 'none';
   pintarAgenda();
+}
+async function eliminarSerieConsultante(){
+  const consId=document.getElementById('agFiltroCons').value;
+  if(!consId) return;
+  const nombre=(consultantes.find(c=>String(c.id)===String(consId))||{}).nombre||'este consultante';
+  if(!agendaCache.length){ toast('No hay citas para eliminar'); return; }
+  if(!confirm(`¿Eliminar las ${agendaCache.length} citas de ${nombre}? Esta acción no se puede deshacer.`)) return;
+  await api('DELETE','/api/agenda/consultante/'+consId);
+  limpiarCita();
+  await renderAgenda();
+  toast('Citas eliminadas');
 }
 function editarCita(id){
   const a=agendaCache.find(x=>x.id===id); if(!a) return;
@@ -773,6 +790,20 @@ function editarCita(id){
   document.getElementById('agFormTitle').textContent='Editar cita';
   pintarAgenda();
 }
+// Aviso de superposición: se compara contra la agenda completa (no solo la
+// vista filtrada), porque dos citas pueden chocar aunque sean de distintos
+// consultantes. Es un aviso, no un bloqueo: el profesional puede confirmar
+// igual (ej: pareja atendida junto a un tercero, o un límite intencional).
+async function buscarSolapamientos(fechas, horario, excluirId){
+  const todas = await api('GET','/api/agenda');
+  return todas.filter(a => fechas.includes(a.fecha) && a.horario===horario && String(a.id)!==String(excluirId||''));
+}
+function confirmarSolapamiento(conflictos){
+  const detalle = conflictos.slice(0,5).map(c=>`${c.fecha} con ${c.consultante_nombre}`).join(', ');
+  const extra = conflictos.length>5 ? ` y ${conflictos.length-5} más` : '';
+  const plural = conflictos.length===1 ? 'un turno' : `${conflictos.length} turnos`;
+  return confirm(`Ya hay ${plural} agendado a las ${conflictos[0].horario}: ${detalle}${extra}.\n¿Guardar igual?`);
+}
 async function guardarCita(){
   const consId=document.getElementById('aCons').value;
   if(!consId){ toast('Seleccioná un consultante'); return; }
@@ -785,14 +816,23 @@ async function guardarCita(){
   const frec=document.getElementById('aFrec').value;
   const idField=document.getElementById('agId').value;
 
+  let fechas=[fIni];
+  if(!idField){
+    const fFin=(frec==='Única')?fIni:(document.getElementById('aFechaFin').value||fIni);
+    fechas=generarFechasRecurrentes(fIni,fFin,frec);
+    if(!fechas.length){ toast('Verificá las fechas'); return; }
+  }
+
+  if(hora){
+    const conflictos=await buscarSolapamientos(fechas, hora, idField);
+    if(conflictos.length && !confirmarSolapamiento(conflictos)) return;
+  }
+
   try{
     if(idField){
       await api('PUT','/api/agenda/'+idField, {consultante_id:Number(consId), fecha:fIni, horario:hora, costo, link_reunion:link||null});
       toast('Cita actualizada');
     } else {
-      const fFin=(frec==='Única')?fIni:(document.getElementById('aFechaFin').value||fIni);
-      const fechas=generarFechasRecurrentes(fIni,fFin,frec);
-      if(!fechas.length){ toast('Verificá las fechas'); return; }
       await api('POST','/api/agenda/lote', {consultante_id:Number(consId), fechas, horario:hora, costo, link_reunion:link||null});
       toast(fechas.length>1?`${fechas.length} citas creadas`:'Cita creada');
     }
@@ -823,13 +863,18 @@ function limpiarCita(){
 // ============================================================
 const DIAS_CORTOS=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 let disponibilidadCache=[];
+let ocupacionCache=[]; // sesiones futuras ya agendadas, para superponer en la grilla
 let arrastreDispo=null; // {dia, minInicio, minFin, activar}
 
 function minutosGridDispo(){ const out=[]; for(let m=7*60; m<23*60; m+=30) out.push(m); return out; }
 function minAHora(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
+function minDesdeHora(hhmm){ const [h,m]=hhmm.split(':').map(Number); return h*60+m; }
 function slotDisponible(dia,min){
   const h=minAHora(min);
   return disponibilidadCache.some(r=>r.dia_semana===dia && r.hora_inicio<=h && r.hora_fin>h);
+}
+function ocupacionEnSlot(dia,min){
+  return ocupacionCache.filter(o=>o.dia===dia && Math.floor(o.min/30)*30===min);
 }
 function pintarGridDisponibilidad(){
   const cont=document.getElementById('dispoGrid');
@@ -840,7 +885,10 @@ function pintarGridDisponibilidad(){
     html+=`<div class="dg-time">${enPunto?minAHora(m):''}</div>`;
     for(let dia=0; dia<7; dia++){
       const on=slotDisponible(dia,m);
-      html+=`<div class="dg-cell${on?' on':''}${enPunto?' hora':''}" data-dia="${dia}" data-min="${m}"></div>`;
+      const ocupados=ocupacionEnSlot(dia,m);
+      const titulo=ocupados.length
+        ? ` title="${esc(ocupados.map(o=>`${o.fecha} ${o.horario} · ${o.consultante_nombre}`).join('\n'))}"` : '';
+      html+=`<div class="dg-cell${on?' on':''}${enPunto?' hora':''}${ocupados.length?' ocupada':''}" data-dia="${dia}" data-min="${m}"${titulo}></div>`;
     }
   });
   cont.innerHTML=html;
@@ -859,6 +907,15 @@ function pintarPreviewDispo(){
 }
 async function renderDisponibilidad(){
   disponibilidadCache = await api('GET','/api/disponibilidad');
+  const todasCitas = await api('GET','/api/agenda');
+  const f=hoy();
+  ocupacionCache = todasCitas.filter(a=>a.horario && a.fecha>=f).map(a=>({
+    dia: new Date(a.fecha+'T00:00:00').getDay(),
+    min: minDesdeHora(a.horario),
+    fecha: a.fecha,
+    horario: a.horario,
+    consultante_nombre: a.consultante_nombre
+  }));
   pintarGridDisponibilidad();
 }
 // Delegación sobre el contenedor (no por celda): sobrevive a los repintados,

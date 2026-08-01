@@ -83,6 +83,17 @@ router.delete('/:id', requireProfesional, (req, res) => {
   res.json({ ok: true });
 });
 
+// Borra toda la serie de citas de un consultante puntual, sin borrar al
+// consultante en sí (a diferencia de DELETE /consultantes/:id, que sí lo hace
+// vía cascada). Pensado para el botón "vaciar agenda de este consultante".
+router.delete('/consultante/:id', requireProfesional, (req, res) => {
+  const cons = db.prepare('SELECT id FROM consultantes WHERE id = ? AND profesional_id = ?')
+    .get(req.params.id, req.session.profesionalId);
+  if (!cons) return res.status(404).json({ error: 'Consultante no encontrado' });
+  const info = db.prepare('DELETE FROM agenda WHERE consultante_id = ?').run(req.params.id);
+  res.json({ ok: true, eliminadas: info.changes });
+});
+
 // ---------- lado paciente ----------
 router.get('/mias', requirePaciente, (req, res) => {
   res.json(agendaConNombre('a.consultante_id = ?', [req.session.pacienteId]));
