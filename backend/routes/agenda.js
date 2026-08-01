@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { requireProfesional, requirePaciente } = require('../middleware');
+const { calcularSlotsDisponibles } = require('../disponibilidad');
 
 const router = express.Router();
 
@@ -90,10 +91,19 @@ router.get('/mias', requirePaciente, (req, res) => {
 router.post('/mias', requirePaciente, (req, res) => {
   const { fecha, horario } = req.body || {};
   if (!fecha || !FECHA_RE.test(fecha)) return res.status(400).json({ error: 'Fecha inválida' });
-  if (horario && !HORA_RE.test(horario)) return res.status(400).json({ error: 'Horario inválido' });
+  if (!horario || !HORA_RE.test(horario)) return res.status(400).json({ error: 'Elegí un horario' });
+
+  // Se revalida contra la disponibilidad real del profesional (no alcanza con
+  // que el front solo ofrezca horarios libres: alguien podría pedir cualquier
+  // horario pegándole directo a la API).
+  const consultante = db.prepare('SELECT profesional_id FROM consultantes WHERE id = ?').get(req.session.pacienteId);
+  const disponibles = calcularSlotsDisponibles(consultante.profesional_id, fecha);
+  if (!disponibles.includes(horario)) {
+    return res.status(409).json({ error: 'Ese horario ya no está disponible. Elegí otro.' });
+  }
 
   const info = db.prepare(`INSERT INTO agenda (consultante_id, fecha, horario, costo, link_reunion, anotaciones, creado_por)
-    VALUES (?, ?, ?, NULL, NULL, '', 'paciente')`).run(req.session.pacienteId, fecha, horario || null);
+    VALUES (?, ?, ?, NULL, NULL, '', 'paciente')`).run(req.session.pacienteId, fecha, horario);
   res.json(agendaConNombre('a.id = ?', [info.lastInsertRowid])[0]);
 });
 

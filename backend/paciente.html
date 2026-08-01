@@ -95,10 +95,10 @@
     </div>
     <div class="card">
       <h2>Solicitar nueva sesión</h2>
-      <p class="sub">Elegí fecha y horario. Tu profesional confirmará el costo y el link de la reunión.</p>
+      <p class="sub">Elegí una fecha para ver los horarios que tu profesional puso a disposición.</p>
       <div class="row">
-        <div class="col"><label>Fecha</label><input id="nFecha" type="date"></div>
-        <div class="col"><label>Horario</label><input id="nHora" type="time"></div>
+        <div class="col"><label>Fecha</label><input id="nFecha" type="date" onchange="cargarHorariosDisponibles()"></div>
+        <div class="col"><label>Horario</label><select id="nHora"><option value="">Elegí una fecha primero</option></select></div>
       </div>
       <div class="btns"><button class="b b-primary" onclick="solicitarTurno()">Solicitar turno</button></div>
     </div>
@@ -167,7 +167,9 @@ async function mostrarApp(){
   document.getElementById('authScreen').style.display='none';
   document.getElementById('appShell').style.display='block';
   document.getElementById('pacNombre').textContent=sesion.nombre;
+  document.getElementById('nFecha').min = hoy();
   document.getElementById('nFecha').value=hoy();
+  await cargarHorariosDisponibles();
   await renderSesiones();
 }
 async function logout(){
@@ -192,14 +194,27 @@ async function renderSesiones(){
   });
   if(!lista.length) body.innerHTML='<tr><td colspan="5" class="empty">Todavía no tenés sesiones programadas.</td></tr>';
 }
+async function cargarHorariosDisponibles(){
+  const fecha=document.getElementById('nFecha').value;
+  const sel=document.getElementById('nHora');
+  if(!fecha){ sel.innerHTML='<option value="">Elegí una fecha primero</option>'; return; }
+  sel.innerHTML='<option value="">Cargando...</option>';
+  try{
+    const horarios = await api('GET','/api/disponibilidad/horarios?fecha='+fecha);
+    sel.innerHTML = horarios.length
+      ? horarios.map(h=>`<option value="${h}">${h}</option>`).join('')
+      : '<option value="">Sin horarios disponibles ese día</option>';
+  }catch(e){ sel.innerHTML='<option value="">Error al cargar horarios</option>'; }
+}
 async function solicitarTurno(){
   const fecha=document.getElementById('nFecha').value;
   const horario=document.getElementById('nHora').value;
   if(!fecha){ toast('Elegí una fecha'); return; }
+  if(!horario){ toast('Elegí un horario disponible'); return; }
   try{
     await api('POST','/api/agenda/mias', {fecha, horario});
     toast('Turno solicitado. Tu profesional confirmará costo y link.');
-    document.getElementById('nHora').value='';
+    await cargarHorariosDisponibles();
     await renderSesiones();
   }catch(e){ toast(e.message); }
 }

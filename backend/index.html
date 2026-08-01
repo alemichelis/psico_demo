@@ -185,6 +185,7 @@
   <button class="active" data-view="dashboard" onclick="switchView('dashboard',this)">Dashboard</button>
   <button data-view="consultantes" onclick="switchView('consultantes',this)">Consultantes</button>
   <button data-view="agenda" onclick="switchView('agenda',this)">Agenda</button>
+  <button data-view="disponibilidad" onclick="switchView('disponibilidad',this)">Disponibilidad</button>
   <button data-view="sesiones" onclick="switchView('sesiones',this)">Sesiones</button>
 </nav>
 
@@ -289,6 +290,32 @@
           <table style="margin-top:12px">
             <thead><tr><th>Fecha</th><th>Hora</th><th>Costo</th><th>Link</th></tr></thead>
             <tbody id="agBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DISPONIBILIDAD ============ -->
+  <section id="disponibilidad" class="view">
+    <div class="row">
+      <div class="col" style="max-width:360px">
+        <div class="card">
+          <h2>Agregar disponibilidad</h2>
+          <p class="sub">Franjas semanales recurrentes en las que ofrecés turnos. Grilla de 30 minutos, entre 07:00 y 23:00.</p>
+          <label>Día</label><select id="dpDia"></select>
+          <label>Desde</label><select id="dpDesde"></select>
+          <label>Hasta</label><select id="dpHasta"></select>
+          <div class="btns"><button class="b b-primary" onclick="agregarDisponibilidad()">Agregar franja</button></div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card">
+          <h2>Tu disponibilidad semanal</h2>
+          <p class="sub">Los pacientes solo pueden reservar dentro de estas franjas (y que no estén ya ocupadas).</p>
+          <table>
+            <thead><tr><th>Día</th><th>Desde</th><th>Hasta</th><th></th></tr></thead>
+            <tbody id="dispoBody"></tbody>
           </table>
         </div>
       </div>
@@ -485,6 +512,7 @@ async function mostrarApp(){
   document.getElementById('dashFecha').value=hoy();
   document.getElementById('aFechaIni').value=hoy();
   document.getElementById('aFechaFin').value=hoy();
+  poblarSelectsDisponibilidad();
   await cargarConsultantes();
   renderConsultantes();
   await renderDashboard();
@@ -565,6 +593,7 @@ function switchView(id, btn){
   if(id==='dashboard') renderDashboard();
   if(id==='consultantes') renderConsultantes();
   if(id==='agenda'){ fillConsultanteSelect('aCons'); fillFiltroConsultanteSelect(); renderAgenda(); }
+  if(id==='disponibilidad') renderDisponibilidad();
   if(id==='sesiones'){ fillConsultanteSelect('sCons'); cargarSesionesPaciente(); }
 }
 
@@ -793,6 +822,56 @@ function limpiarCita(){
   document.getElementById('aFechaIni').value=hoy();
   document.getElementById('agFormTitle').textContent='Programar cita';
   pintarAgenda();
+}
+
+// ============================================================
+//  DISPONIBILIDAD
+// ============================================================
+const DIAS_SEMANA=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+let disponibilidadCache=[];
+function gridHorarios(){
+  const out=[];
+  for(let m=7*60; m<=23*60; m+=30){
+    out.push(String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'));
+  }
+  return out;
+}
+function poblarSelectsDisponibilidad(){
+  document.getElementById('dpDia').innerHTML = DIAS_SEMANA.map((d,i)=>`<option value="${i}">${d}</option>`).join('');
+  const horas=gridHorarios();
+  document.getElementById('dpDesde').innerHTML = horas.slice(0,-1).map(h=>`<option value="${h}">${h}</option>`).join('');
+  document.getElementById('dpHasta').innerHTML = horas.slice(1).map(h=>`<option value="${h}">${h}</option>`).join('');
+  document.getElementById('dpHasta').value = horas[horas.length-1];
+}
+function pintarDisponibilidad(){
+  const body=document.getElementById('dispoBody'); body.innerHTML='';
+  const lista=disponibilidadCache.slice().sort((a,b)=> a.dia_semana-b.dia_semana || a.hora_inicio.localeCompare(b.hora_inicio));
+  lista.forEach(d=>{
+    body.insertAdjacentHTML('beforeend',
+      `<tr><td>${DIAS_SEMANA[d.dia_semana]}</td><td>${d.hora_inicio}</td><td>${d.hora_fin}</td>
+       <td><button class="b b-red" style="padding:4px 10px" onclick="eliminarDisponibilidad(${d.id})">Eliminar</button></td></tr>`);
+  });
+  if(!lista.length) body.innerHTML='<tr><td colspan="4" class="empty">Todavía no cargaste disponibilidad.</td></tr>';
+}
+async function renderDisponibilidad(){
+  disponibilidadCache = await api('GET','/api/disponibilidad');
+  pintarDisponibilidad();
+}
+async function agregarDisponibilidad(){
+  const dia_semana=Number(document.getElementById('dpDia').value);
+  const hora_inicio=document.getElementById('dpDesde').value;
+  const hora_fin=document.getElementById('dpHasta').value;
+  if(hora_inicio>=hora_fin){ toast('El horario de fin debe ser posterior al de inicio'); return; }
+  try{
+    await api('POST','/api/disponibilidad', {dia_semana, hora_inicio, hora_fin});
+    toast('Disponibilidad agregada');
+    await renderDisponibilidad();
+  }catch(e){ toast(e.message); }
+}
+async function eliminarDisponibilidad(id){
+  if(!confirm('¿Eliminar esta franja de disponibilidad?')) return;
+  await api('DELETE','/api/disponibilidad/'+id);
+  await renderDisponibilidad();
 }
 
 // ============================================================

@@ -5,6 +5,7 @@ const session = require('express-session');
 const authRoutes = require('./routes/auth');
 const consultantesRoutes = require('./routes/consultantes');
 const agendaRoutes = require('./routes/agenda');
+const disponibilidadRoutes = require('./routes/disponibilidad');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -29,6 +30,7 @@ app.use(session({
 app.use('/api/auth', authRoutes);
 app.use('/api/consultantes', consultantesRoutes);
 app.use('/api/agenda', agendaRoutes);
+app.use('/api/disponibilidad', disponibilidadRoutes);
 
 // Frontends estáticos: solo se exponen estos dos archivos puntuales (no toda
 // la carpeta), así db.js, server.js y psico.sqlite nunca quedan accesibles

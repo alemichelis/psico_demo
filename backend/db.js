@@ -45,6 +45,18 @@ db.exec(`
     creado_en TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (consultante_id) REFERENCES consultantes(id) ON DELETE CASCADE
   );
+
+  -- Franjas horarias semanales recurrentes en las que el profesional ofrece
+  -- turnos (ej: "todos los lunes de 09:00 a 13:00"). dia_semana: 0=domingo.
+  CREATE TABLE IF NOT EXISTS disponibilidad (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profesional_id INTEGER NOT NULL,
+    dia_semana INTEGER NOT NULL,
+    hora_inicio TEXT NOT NULL,
+    hora_fin TEXT NOT NULL,
+    creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (profesional_id) REFERENCES profesionales(id) ON DELETE CASCADE
+  );
 `);
 
 // Migración: agrega columnas para recuperación de contraseña si la base ya
